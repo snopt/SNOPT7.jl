@@ -6,7 +6,7 @@ Still needs work, but currently works with:
 - JuMP 0.19-beta2
 - MathOptInterface 0.8
 
-- SNOPT 7.7 (including [trial libraries](ccom.ucsd.edu/~optimizers))
+- SNOPT 7.7 (including [trial libraries](http://ccom.ucsd.edu/~optimizers))
 
 There are two examples, one using JuMP/MOI and the other using the "SNOPT"-like interface.
 
