@@ -2,7 +2,7 @@ module SNOPT7
 
 using SparseArrays
 
-export initialize, snopt, readOptions, setOption
+export initialize, snopt!, readOptions, setOption!
 export snoptWorkspace
 
 function __init__()
@@ -29,15 +29,22 @@ mutable struct snoptWorkspace
     lambda::Vector{Float64}
     obj_val::Float64
 
+    num_inf::Int
+    sum_inf::Float64
+
+    iterations::Int
+    major_itns::Int
+    run_time::Float64
+
     function snoptWorkspace(leniw::Int,lenrw::Int)
         prob = new(0,leniw, lenrw,
                    zeros(Int,leniw), zeros(Float64,lenrw), 0, 0)
-        finalizer(freeWorkspace,prob)
+        finalizer(freeWorkspace!,prob)
         prob
     end
 end
 
-function freeWorkspace(prob::snoptWorkspace)
+function freeWorkspace!(prob::snoptWorkspace)
     ccall((:f_snend, libsnopt7),
           Cvoid, (Ptr{Cint}, Cint, Ptr{Float64}, Cint),
           prob.iw, prob.leniw, prob.rw, prob.lenrw)
@@ -79,9 +86,9 @@ SNOPT_status = Dict(
     999=>:Internal_Error)
 
 # Callbacks
-function obj_wrapper(mode_::Ptr{Cint}, nnobj::Cint, x_::Ptr{Float64},
-                     f_::Ptr{Float64}, g_::Ptr{Float64},
-                     status::Cint)
+function obj_wrapper!(mode_::Ptr{Cint}, nnobj::Cint, x_::Ptr{Float64},
+                      f_::Ptr{Float64}, g_::Ptr{Float64},
+                      status::Cint)
     x    = unsafe_wrap(Array, x_, Int(nnobj))
     mode = unsafe_load(mode_)
 
@@ -97,9 +104,9 @@ function obj_wrapper(mode_::Ptr{Cint}, nnobj::Cint, x_::Ptr{Float64},
     return
 end
 
-function con_wrapper(mode_::Ptr{Cint}, nncon::Cint, nnjac::Cint, negcon::Cint,
-                     x_::Ptr{Float64}, c_::Ptr{Float64}, J_::Ptr{Float64},
-                     status::Cint)
+function con_wrapper!(mode_::Ptr{Cint}, nncon::Cint, nnjac::Cint, negcon::Cint,
+                      x_::Ptr{Float64}, c_::Ptr{Float64}, J_::Ptr{Float64},
+                      status::Cint)
 
     x    = unsafe_wrap(Array, x_, Int(nnjac))
     mode = unsafe_load(mode_)
@@ -153,14 +160,14 @@ function readOptions(prob::snoptWorkspace, specsfile::String)
     return Int(prob.status)
 end
 
-function snopt(prob::snoptWorkspace, start::String, name::String,
-               m::Int, n::Int, nnCon::Int, nnObj::Int, nnJac::Int,
-               fObj::Float64, iObj::Int,
-               confun::Function, objfun::Function,
-               #eval_f::Function, eval_grad_f::Function,
-               #eval_g::Function, eval_jac_g::Function,
-               J::SparseMatrixCSC, bl::Vector{Float64}, bu::Vector{Float64},
-               hs::Vector{Int}, x::Vector{Float64})
+function snopt!(prob::snoptWorkspace, start::String, name::String,
+                m::Int, n::Int, nnCon::Int, nnObj::Int, nnJac::Int,
+                fObj::Float64, iObj::Int,
+                confun::Function, objfun::Function,
+                #eval_f::Function, eval_grad_f::Function,
+                #eval_g::Function, eval_jac_g::Function,
+                J::SparseMatrixCSC, bl::Vector{Float64}, bu::Vector{Float64},
+                hs::Vector{Int}, x::Vector{Float64})
 
     @assert n+m == length(x) == length(bl) == length(bu)
     @assert n+m == length(hs)
@@ -217,10 +224,18 @@ function snopt(prob::snoptWorkspace, start::String, name::String,
     prob.status  = status[1]
     prob.obj_val = obj_val[1]
 
+    prob.num_inf = nInf[1]
+    prob.sum_inf = sInf[1]
+
+    prob.iterations = prob.iw[421]
+    prob.major_itns = prob.iw[422]
+
+    prob.run_time   = prob.rw[462]
+
     return Int(prob.status)
 end
 
-function setOption(prob::snoptWorkspace, optstring::String)
+function setOption!(prob::snoptWorkspace, optstring::String)
     # Set SNOPT7 option via string
     if !isascii(optstring)
         error("SNOPT7: Non-ASCII parameters not supported")
@@ -235,7 +250,7 @@ function setOption(prob::snoptWorkspace, optstring::String)
     return errors[1]
 end
 
-function setOption(prob::snoptWorkspace, keyword::String, value::Int)
+function setOption!(prob::snoptWorkspace, keyword::String, value::Int)
     # Set SNOPT7 integer option
     if !isascii(keyword)
         error("SNOPT7: Non-ASCII parameters not supported")
@@ -250,7 +265,7 @@ function setOption(prob::snoptWorkspace, keyword::String, value::Int)
     return errors[1]
 end
 
-function setOption(prob::snoptWorkspace, keyword::String, value::Float64)
+function setOption!(prob::snoptWorkspace, keyword::String, value::Float64)
     # Set SNOPT7 real option
     if !isascii(keyword)
         error("SNOPT7: Non-ASCII parameters not supported")

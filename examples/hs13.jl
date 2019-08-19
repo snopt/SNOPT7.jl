@@ -10,15 +10,12 @@ function objfun(mode_::Ptr{Cint}, n_::Ptr{Cint}, x_::Ptr{Float64},
     x    = unsafe_wrap(Array, x_, Int(n))
 
     if mode == 0 || mode == 2
-#        obj = (x[1] - 2.0)^2 + x[2]^2
         obj = x[1] + x[2]
         unsafe_store!(f_,obj)
     end
 
     if mode == 1 || mode == 2
         g = unsafe_wrap(Array,g_, Int(n))
-#        g[1] = 2.0*(x[1] - 2.0)
-#        g[2] = 2.0*x[2]
         g[1] = 1.0
         g[2] = 1.0
     end
@@ -37,13 +34,13 @@ function confun(mode_::Ptr{Cint},
     x    = unsafe_wrap(Array, x_, Int(nnjac))
     if mode == 0 || mode == 2
         c = unsafe_wrap(Array, c_, Int(nncon))
-        c[1] = x[1]^3 - x[2] #(1.0 - x[1])^3  - x[2]
+        c[1] = x[1]^3 - x[2]
 
     end
 
     if mode == 1 || mode == 2
         J = unsafe_wrap(Array,J_, Int(negcon))
-        J[1] = 3.0*x[1]^2 #-3.0*(1-x[1])^2
+        J[1] = 3.0*x[1]^2
         J[2] = -1.0
 
     end
@@ -75,13 +72,7 @@ n    = 2
 m    = 1
 iObj = 0
 
-hs    = zeros(Int,n+m)
-
-#bl = [  0., 0., 0. ]
-#bu = [  inf, inf, inf ]
-#x  = [ -2. , -2., 0. ]
-#x  = [ 1. , 0., 0. ]
-
+hs = zeros(Int,n+m)
 bl = [ -inf, 1., 0.0 ]
 bu = [  inf, inf, inf ]
 x  = [ 0. , 3., 1. ]
@@ -95,13 +86,18 @@ J = sparse(J)
 
 prob = initialize("hs13.out", "screen")
 info = readOptions(prob, "hs13.spc")
-info = snopt(prob, "cold", "hs13",
-             m, n, nnCon, nnObj, nnJac, 0., iObj,
-             #eval_f, eval_grad_f, eval_g, eval_jac_g,
-             confun, objfun,
-             J, bl, bu, hs, x)
+info = snopt!(prob, "cold", "hs13",
+              m, n, nnCon, nnObj, nnJac, 0., iObj,
+              confun, objfun,
+              J, bl, bu, hs, x)
 
-println(x)
-println(prob.x)
-println(prob.obj_val)
-println(prob.status)
+println("initial x = ", x)
+println("final x = ", prob.x)
+println("final obj = ", prob.obj_val)
+println("SNOPT status = ", prob.status)
+
+println("sum of inf: = ", prob.sum_inf)
+
+println("num iterations = ", prob.iterations)
+println("num major iterations = ", prob.major_itns)
+println("solve time = ", prob.run_time)
