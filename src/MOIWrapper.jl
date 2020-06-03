@@ -307,18 +307,18 @@ function MOI.optimize!(model::Optimizer)
         for (name,value) in model.options
             # Replace underscore with space
             keyword = replace(String(name), "_" => " ")
-            SNOPT7.setOption(model.workspace, "$keyword $value")
+            SNOPT7.setOption!(model.workspace, "$keyword $value")
         end
-        SNOPT7.setOption(model.workspace, "Summary frequency 1")
-        SNOPT7.setOption(model.workspace, "Print frequency 1")
+        SNOPT7.setOption!(model.workspace, "Summary frequency 1")
+        SNOPT7.setOption!(model.workspace, "Print frequency 1")
 
         start = "Cold"
         name  = "prob"
-        status = SNOPT7.snopt(model.workspace, start, name,
+        status = SNOPT7.snopt!(model.workspace, start, name,
                               m, n, nncon, nnobj, nnjac,
                               fobj, iobj, eval_con, eval_obj,
                               J, bl, bu, hs, x)
-        SNOPT7.freeWorkspace(model.workspace)
+        SNOPT7.freeWorkspace!(model.workspace)
 
     else
         # Linear/quadratic objective
@@ -330,7 +330,7 @@ end
 # Return info
 function MOI.get(model::Optimizer, ::MOI.TerminationStatus)
     if model.workspace === nothing
-        return MOI.NoSolution
+        return MOI.NO_SOLUTION
     end
 
     status = SNOPT_status[model.workspace.status]
@@ -366,7 +366,7 @@ end
 
 function MOI.get(model::Optimizer, ::MOI.PrimalStatus)
     if model.workspace === nothing
-        return MOI.NoSolution
+        return MOI.NO_SOLUTION
     end
     status = SNOPT_status[model.workspace.status]
     if status == :Solve_Succeeded
@@ -384,7 +384,7 @@ end
 
 function MOI.get(model::Optimizer, ::MOI.DualStatus)
     if model.workspace === nothing
-        return MOI.NoSolution
+        return MOI.NO_SOLUTION
     end
     status = SNOPT_status[model.workspace.status]
     if status == :Solve_Succeeded
