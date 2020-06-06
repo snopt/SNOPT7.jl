@@ -1,0 +1,9 @@
+name = "SNOPT7"
+uuid = "32a37bd7-71e6-4205-9197-7b5bd839f8dd"
+authors = []
+version = "0.1.0"
+
+[deps]
+JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
