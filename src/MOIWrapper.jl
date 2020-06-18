@@ -307,18 +307,18 @@ function MOI.optimize!(model::Optimizer)
         for (name,value) in model.options
             # Replace underscore with space
             keyword = replace(String(name), "_" => " ")
-            SNOPT7.setOption(model.workspace, "$keyword $value")
+            SNOPT7.setOption!(model.workspace, "$keyword $value")
         end
-        SNOPT7.setOption(model.workspace, "Summary frequency 1")
-        SNOPT7.setOption(model.workspace, "Print frequency 1")
+        SNOPT7.setOption!(model.workspace, "Summary frequency 1")
+        SNOPT7.setOption!(model.workspace, "Print frequency 1")
 
         start = "Cold"
         name  = "prob"
-        status = SNOPT7.snopt(model.workspace, start, name,
+        status = SNOPT7.snopt!(model.workspace, start, name,
                               m, n, nncon, nnobj, nnjac,
                               fobj, iobj, eval_con, eval_obj,
                               J, bl, bu, hs, x)
-        SNOPT7.freeWorkspace(model.workspace)
+        SNOPT7.freeWorkspace!(model.workspace)
 
     else
         # Linear/quadratic objective
@@ -330,7 +330,7 @@ end
 # Return info
 function MOI.get(model::Optimizer, ::MOI.TerminationStatus)
     if model.workspace === nothing
-        return MOI.NoSolution
+        return MOI.NO_SOLUTION
     end
 
     status = SNOPT_status[model.workspace.status]
@@ -340,7 +340,7 @@ function MOI.get(model::Optimizer, ::MOI.TerminationStatus)
     elseif status ==:Infeasible_Problem_Detected
         return MOI.LOCALLY_INFEASIBLE
     elseif status ==:Unbounded_Problem_Detected
-        return MOI.Unbounded
+        return MOI.INFEASIBLE_OR_UNBOUNDED
     elseif status == :Solved_To_Acceptable_Level
         return MOI.ALMOST_LOCALLY_SOLVED
     elseif status == :User_Requested_Stop
@@ -349,7 +349,9 @@ function MOI.get(model::Optimizer, ::MOI.TerminationStatus)
         return MOI.ITERATION_LIMIT
     elseif status == :Maximum_CpuTime_Exceeded
         return MOI.TIME_LIMIT
-    elseif status == :Invalid_Problem_Definition
+    elseif status == (:Invalid_Problem_Definition,
+                      :User_Supplied_Function_Error,
+                      :User_Supplied_Function_Undefined)
         return MOI.INVALID_MODEL
     elseif status == :Insufficient_Memory
         return MOI.MEMORY_LIMIT
@@ -366,37 +368,37 @@ end
 
 function MOI.get(model::Optimizer, ::MOI.PrimalStatus)
     if model.workspace === nothing
-        return MOI.NoSolution
+        return MOI.NO_SOLUTION
     end
     status = SNOPT_status[model.workspace.status]
     if status == :Solve_Succeeded
-        return MOI.FeasiblePoint
+        return MOI.FEASIBLE_POINT
     elseif status == :Feasible_Point_Found
-        return MOI.FeasiblePoint
+        return MOI.FEASIBLE_POINT
     elseif status == :Solved_To_Acceptable_Level
-        return MOI.NearlyFeasiblePoint
+        return MOI.NEARLY_FEASIBLE_POINT
     elseif status == :Infeasible_Problem_Detected
-        return MOI.InfeasiblePoint
+        return MOI.INFEASIBLE_POINT
     else
-        return MOI.Unknown
+        return MOI.UNKNOWN_RESULT_STATUS
     end
 end
 
 function MOI.get(model::Optimizer, ::MOI.DualStatus)
     if model.workspace === nothing
-        return MOI.NoSolution
+        return MOI.NO_SOLUTION
     end
     status = SNOPT_status[model.workspace.status]
     if status == :Solve_Succeeded
-        return MOI.FeasiblePoint
+        return MOI.FEASIBLE_POINT
     elseif status == :Feasible_Point_Found
-        return MOI.FeasiblePoint
+        return MOI.FEASIBLE_POINT
     elseif status == :Solved_To_Acceptable_Level
-        return MOI.NearlyFeasiblePoint
+        return MOI.NEARLY_FEASIBLE_POINT
     elseif status == :Infeasible_Problem_Detected
-        return MOI.Unknown # unbounded?
+        return MOI.UNKNOWN_RESULT_STATUS # unbounded?
     else
-        return MOI.Unknown
+        return MOI.UNKNOWN_RESULT_STATUS
     end
 end
 
