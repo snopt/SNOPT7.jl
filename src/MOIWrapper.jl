@@ -21,7 +21,7 @@ mutable struct Optimizer <: MOI.AbstractOptimizer
     nlcon::Int
 
     workspace::Union{snoptWorkspace,Nothing}
-    options
+    options::Dict{String, Any}
 end
 Optimizer(;options...) = Optimizer(MOI.MIN_SENSE, nothing, [], [], nothing, 0, 0, 0, nothing, options)
 
@@ -55,6 +55,7 @@ MOI.supports(::Optimizer, ::MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float
 MOI.supports(::Optimizer, ::MOI.ObjectiveFunction{MOI.ScalarQuadraticFunction{Float64}}) = true
 MOI.supports(::Optimizer, ::MOI.ObjectiveSense) = true
 MOI.supports(::Optimizer, ::MOI.VariablePrimalStart,::Type{MOI.VariableIndex}) = true  #?
+MOI.supports(::Optimizer, ::MOI.RawParameter) = true
 
 MOI.supports_constraint(::Optimizer, ::Type{MOI.SingleVariable}, ::Type{MOI.LessThan{Float64}}) = true
 MOI.supports_constraint(::Optimizer, ::Type{MOI.SingleVariable}, ::Type{MOI.GreaterThan{Float64}}) = true
@@ -67,6 +68,11 @@ MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarAffineFunction{Float64}}, 
 MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarAffineFunction{Float64}}, ::Type{MOI.Interval{Float64}}) = true
 
 MOI.get(model::Optimizer, ::MOI.NumberOfVariables) = length(model.variables)
+
+function MOI.set(model::Optimizer, p::MOI.RawParameter, value)
+    model.options[p.name] = value
+    return
+end
 
 function MOI.set(model::Optimizer, ::MOI.ObjectiveSense, sense::MOI.OptimizationSense)
     model.sense = sense

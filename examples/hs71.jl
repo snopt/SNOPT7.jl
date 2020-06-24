@@ -10,7 +10,9 @@
 
 using JuMP, SNOPT7
 
-m = Model(with_optimizer(SNOPT7.Optimizer, print_level=0,system_information="yes"))
+m = Model(optimizer_with_attributes(SNOPT7.Optimizer,
+                                    "print_level"=>0,
+                                    "system_information"=>"yes"))
 
 x0 = [1,5,5,1]
 
