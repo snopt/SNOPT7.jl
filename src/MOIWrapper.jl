@@ -53,8 +53,8 @@ MOI.supports(::Optimizer, ::MOI.NLPBlock) = true
 MOI.supports(::Optimizer, ::MOI.ObjectiveFunction{MOI.SingleVariable}) = true
 MOI.supports(::Optimizer, ::MOI.ObjectiveFunction{MOI.ScalarAffineFunction{Float64}}) = true
 MOI.supports(::Optimizer, ::MOI.ObjectiveFunction{MOI.ScalarQuadraticFunction{Float64}}) = true
-MOI.supports(::Optimizer, ::MOI.ObjectiveSense) = true
 MOI.supports(::Optimizer, ::MOI.VariablePrimalStart,::Type{MOI.VariableIndex}) = true  #?
+MOI.supports(::Optimizer, ::MOI.ObjectiveSense) = true
 MOI.supports(::Optimizer, ::MOI.RawParameter) = true
 
 MOI.supports_constraint(::Optimizer, ::Type{MOI.SingleVariable}, ::Type{MOI.LessThan{Float64}}) = true
@@ -66,6 +66,11 @@ MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarAffineFunction{Float64}}, 
 MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarAffineFunction{Float64}}, ::Type{MOI.GreaterThan{Float64}}) = true
 MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarAffineFunction{Float64}}, ::Type{MOI.EqualTo{Float64}}) = true
 MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarAffineFunction{Float64}}, ::Type{MOI.Interval{Float64}}) = true
+
+MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarQuadraticFunction{Float64}}, ::Type{MOI.LessThan{Float64}}) = true
+MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarQuadraticFunction{Float64}}, ::Type{MOI.GreaterThan{Float64}}) = true
+MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarQuadraticFunction{Float64}}, ::Type{MOI.EqualTo{Float64}}) = true
+MOI.supports_constraint(::Optimizer, ::Type{MOI.ScalarQuadraticFunction{Float64}}, ::Type{MOI.Interval{Float64}}) = true
 
 MOI.get(model::Optimizer, ::MOI.NumberOfVariables) = length(model.variables)
 
@@ -86,6 +91,36 @@ function MOI.set(model::Optimizer, ::MOI.ObjectiveFunction,
     return
 end
 
+function eval_function(v::MOI.SingleVariable, x)
+    vi = v.variable
+    return x[vi.value]
+end
+
+function eval_function(fun::MOI.ScalarAffineFunction, x)
+    obj_value = fun.constant
+    for vi in fun.terms
+        obj_value += x[vi.variable_index.value] * vi.coefficient
+    end
+    return obj_value
+end
+
+function eval_function(fun::MOI.ScalarQuadraticFunction, x)
+    obj_value = fun.constant
+    for vi in fun.affine_terms
+        obj_value += x[vi.variable_index.value] * vi.coefficient
+    end
+    for vi in fun.quadratic_terms
+        irow  = vi.variable_index_1
+        jcol  = vi.variable_index_2
+        value = vi.coefficient * x[irow.value] * x[jcol.value]
+        if irow == jcol
+            value = 0.5 * value
+        end
+        obj_value += value
+    end
+    return obj_value
+end
+
 # Variables
 function MOI.set(model::Optimizer, ::MOI.VariablePrimalStart, vi::MOI.VariableIndex, value::Float64)
     model.variables[vi.value].x = value
@@ -101,6 +136,7 @@ function MOI.add_variables(model::Optimizer, n::Int)
     return [MOI.add_variable(model) for i in 1:n]
 end
 
+# Constraints
 function MOI.add_constraint(model::Optimizer, v::MOI.SingleVariable, lt::MOI.LessThan{Float64})
     # Upper bound on x
     vi = v.variable
@@ -171,6 +207,10 @@ end
 # Solve
 function MOI.optimize!(model::Optimizer)
 
+    # Initialize SNOPT
+    model.workspace = SNOPT7.initialize("snopt.out","screen")
+
+    # Problem setup
     n     = length(model.variables)
     nncon = model.nonlin !== nothing ? length(model.nonlin.constraint_bounds) : 0
     nlcon = length(model.linear_constraints)
@@ -240,96 +280,96 @@ function MOI.optimize!(model::Optimizer)
 
 
 
-
-    if model.nonlin !== nothing
-        # Nonlinear constraints/objective
-        nnobj = n
-
-        # Callbacks
-        function eval_obj(mode_::Ptr{Cint}, n_::Ptr{Cint}, x_::Ptr{Float64},
-                          f_::Ptr{Float64}, g_::Ptr{Float64}, status::Ptr{Cint})
-            mode = unsafe_load(mode_)
-            n    = unsafe_load(n_)
-
-            x    = unsafe_wrap(Array, x_, Int(n))
-
-            if mode == 0 || mode == 2
-                if model.nonlin.has_objective
-                    obj = MOI.eval_objective(model.nonlin.evaluator, x)
-                elseif model.objective !== nothing
-                    obj = eval_function(model.objective, x)
-                else
-                    obj = 0.0
-                end
-                unsafe_store!(f_,obj)
-            end
-
-            if mode == 1 || mode == 2
-                g = unsafe_wrap(Array,g_, Int(n))
-                if model.nonlin.has_objective
-                    MOI.eval_objective_gradient(model.nonlin.evaluator, g, x)
-                end
-            end
-            return
-        end
-
-        function eval_con(mode_::Ptr{Cint},
-                          nncon_::Ptr{Cint}, nnjac_::Ptr{Cint}, negcon_::Ptr{Cint},
-                          x_::Ptr{Float64}, c_::Ptr{Float64}, J_::Ptr{Float64},
-                          status::Ptr{Cint})
-            mode   = unsafe_load(mode_)
-            nncon  = unsafe_load(nncon_)
-            nnjac  = unsafe_load(nnjac_)
-            negcon = unsafe_load(negcon_)
-
-            x = unsafe_wrap(Array, x_, Int(nnjac))
-            if mode == 0 || mode == 2
-                c = unsafe_wrap(Array, c_, Int(nncon))
-                MOI.eval_constraint(model.nonlin.evaluator, c, x)
-            end
-
-            if mode == 1 || mode == 2
-                J = unsafe_wrap(Array,J_, Int(negcon))
-
-                # MOI returns Jacobian in order specified by j_rows, j_cols
-                # SNOPT needs it in sparse-by-col format
-                JJ = zeros(negcon)
-                MOI.eval_constraint_jacobian(model.nonlin.evaluator, JJ, x)
-                vals = sparse(j_rows,j_cols,JJ).nzval
-                for k in 1:negcon
-                    J[k] = vals[k]
-                end
-            end
-            return
-        end
-
-        # SNOPT
-        fobj = 0.0
-        iobj = 0
-        hs   = zeros(Int,n+m)
-
-        model.workspace = SNOPT7.initialize("snopt.out","screen")
-
-        for (name,value) in model.options
-            # Replace underscore with space
-            keyword = replace(String(name), "_" => " ")
-            SNOPT7.setOption!(model.workspace, "$keyword $value")
-        end
-        SNOPT7.setOption!(model.workspace, "Summary frequency 1")
-        SNOPT7.setOption!(model.workspace, "Print frequency 1")
-
-        start = "Cold"
-        name  = "prob"
-        status = SNOPT7.snopt!(model.workspace, start, name,
-                              m, n, nncon, nnobj, nnjac,
-                              fobj, iobj, eval_con, eval_obj,
-                              J, bl, bu, hs, x)
-        SNOPT7.freeWorkspace!(model.workspace)
-
-    else
-        # Linear/quadratic objective
-
+    # Options
+    for (name,value) in model.options
+        # Replace underscore with space
+        keyword = replace(String(name), "_" => " ")
+        SNOPT7.setOption!(model.workspace, "$keyword $value")
     end
+    SNOPT7.setOption!(model.workspace, "Summary frequency 1")
+    SNOPT7.setOption!(model.workspace, "Print frequency 1")
+
+
+
+    # Nonlinear constraints/objective
+    nnobj = n
+
+    # Callbacks
+    function eval_obj(mode_::Ptr{Cint}, n_::Ptr{Cint}, x_::Ptr{Float64},
+                      f_::Ptr{Float64}, g_::Ptr{Float64}, status::Ptr{Cint})
+        mode = unsafe_load(mode_)
+        n    = unsafe_load(n_)
+
+        x    = unsafe_wrap(Array, x_, Int(n))
+
+        if mode == 0 || mode == 2
+            if model.nonlin.has_objective
+                obj = MOI.eval_objective(model.nonlin.evaluator, x)
+            elseif model.objective !== nothing
+                obj = eval_function(model.objective, x)
+            else
+                obj = 0.0
+            end
+            unsafe_store!(f_,obj)
+        end
+
+        if mode == 1 || mode == 2
+            g = unsafe_wrap(Array,g_, Int(n))
+            if model.nonlin.has_objective
+                MOI.eval_objective_gradient(model.nonlin.evaluator, g, x)
+            end
+        end
+        return
+    end
+
+    function eval_con(mode_::Ptr{Cint},
+                      nncon_::Ptr{Cint}, nnjac_::Ptr{Cint}, negcon_::Ptr{Cint},
+                      x_::Ptr{Float64}, c_::Ptr{Float64}, J_::Ptr{Float64},
+                      status::Ptr{Cint})
+        mode   = unsafe_load(mode_)
+        nncon  = unsafe_load(nncon_)
+        nnjac  = unsafe_load(nnjac_)
+        negcon = unsafe_load(negcon_)
+
+        x = unsafe_wrap(Array, x_, Int(nnjac))
+        if mode == 0 || mode == 2
+            c = unsafe_wrap(Array, c_, Int(nncon))
+            MOI.eval_constraint(model.nonlin.evaluator, c, x)
+        end
+
+        if mode == 1 || mode == 2
+            J = unsafe_wrap(Array,J_, Int(negcon))
+
+            # MOI returns Jacobian in order specified by j_rows, j_cols
+            # SNOPT needs it in sparse-by-col format
+            JJ = zeros(negcon)
+            MOI.eval_constraint_jacobian(model.nonlin.evaluator, JJ, x)
+            vals = sparse(j_rows,j_cols,JJ).nzval
+            for k in 1:negcon
+                J[k] = vals[k]
+            end
+        end
+        return
+    end
+
+    # SNOPT
+    fobj = 0.0
+    iobj = 0
+    hs   = zeros(Int,n+m)
+
+    start = "Cold"
+    name  = "prob"
+    status = SNOPT7.snopt!(model.workspace, start, name,
+                           m, n, nncon, nnobj, nnjac,
+                           fobj, iobj, eval_con, eval_obj,
+                           J, bl, bu, hs, x)
+
+# Todo: call sqopt for LP/QPs
+#    if model.nonlin !== nothing
+#    else
+#    end
+
+    SNOPT7.freeWorkspace!(model.workspace)
 
 end
 
