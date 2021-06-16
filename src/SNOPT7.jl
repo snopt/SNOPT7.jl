@@ -278,7 +278,7 @@ function setOption!(prob::snoptWorkspace, keyword::String, value::Float64)
     end
 
     errors = [0]
-    ccall((:f_snseti, libsnopt7), Cvoid,
+    ccall((:f_snsetr, libsnopt7), Cvoid,
           (Ptr{UInt8}, Cint, Cdouble, Ptr{Cint},
            Ptr{Cint}, Cint, Ptr{Cdouble}, Cint),
           optstring, length(optstring), value, errors,
